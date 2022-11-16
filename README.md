@@ -1,10 +1,12 @@
 # Azure Container Apps and Functions
 
-The purpose of this repo is to help you quickly get hands-on with Container Apps. It is meant to be consumed either through GitHub Codespaces or through a local VS Code Dev Container. The idea being that everything you need from tooling to language runtimes is already included in the Dev Container so it should be as simple as executing a run command.
+The purpose of this repo is to help you quickly get hands-on with how Container Apps and Azure Functions can work together. It is meant to be consumed either through GitHub Codespaces or through a local VS Code Dev Container. The idea being that everything you need from tooling to language runtimes is already included in the Dev Container so it should be as simple as executing a run command.
 
 ## Scenario
 
 As a retailer, you want your customers to place online orders, while providing them the best online experience. This includes an API to receive orders that is able to scale out and in based on demand. You want to asynchronously store and process the orders using a queuing mechanism that also needs to be auto-scaled. With a microservices architecture, Container Apps offer a simple experience that allows your developers focus on the services, and not infrastructure.
+
+Now imagine that everything is up and running and a new requirement comes along, we have all been there, but you cannot touch or impact the existing environment. This is where leveraging Azure Functions in combination with event-driven architectures comes into play.
 
 In this sample you will see how to:
 
@@ -13,6 +15,7 @@ In this sample you will see how to:
 3. Ability to split http traffic when deploying a new version
 4. Ability to configure scaling to meet usage needs
 5. Out of the box Telemetry with Dapr + Azure Monitor (Log Analytics)
+6. Extend functionality using Azure Functions and bindings
 
 ![Image of sample application architecture and how messages flow through queue into store](/images/th-arch.png)
 
@@ -176,7 +179,7 @@ We have found our problem, let's fix the code and redeploy. Let's start by takin
 
 ```bash
 # Look at httpapi code
-code /workspaces/lunchbytesNov2022/httpapi/Controllers/DataController.cs
+code /workspaces/aca-and-functions/httpapi/Controllers/DataController.cs
 ```
 
 **DataController.cs** (version 1)
@@ -295,7 +298,7 @@ The coding change looks good. We can still see the original message, but we can 
 
 So, is our app ready for primetime now? Let's change things so that the new app is now receiving all of the traffic, plus we'll also setup some scaling rules. This will allow the container apps to scale up when things are busy, and scale to zero when things are quiet to help be cost effective.
 
-## Deploy autoscaling version with rules
+### Deploy autoscaling version with rules
 
 One final time, we'll now deploy the new configuration with scaling configured. We will also add a simple api and dashboard for monitoring the messages flow.
 
@@ -349,6 +352,60 @@ Run the following commands:
 ```bash
 cd scripts
 ./appwatch.sh $resourceGroup $apiURL $dashboardAPIURL/queue
+```
+
+### New Requirement Comes Along
+
+Everything is now up and running, but a new requirement comes along. The business wants to be able to check if the items in the order are in stock or not. This new team is not well-versed in working with containers, but know Java and Maven quite well, and have some experience with Azure Functions. Can we get ACA and Functions to work together? The short answer is yes, let's take a quick peek at what that might look like.
+
+```bash
+# Create Azure Function Locally
+mvn archetype:generate -DarchetypeGroupId=com.microsoft.azure \
+                       -DarchetypeArtifactId=azure-functions-archetype \
+                       -DjavaVersion=17 \
+                       -DresourceGroup=$resourceGroup \
+                       -DappRegion=$location \
+                       -Dtrigger=ServiceBusTopicTrigger \
+                       -DgroupId=com.fabrikam \
+                       -DartifactId=newrequirement \
+                       -Dversion=1.0-SNAPSHOT
+
+# Create Azure Service Bus Subscription
+az servicebus topic subscription create -g $resourceGroup --namespace-name $servicebusNamespace --topic-name orders --name newrequirement
+```
+
+Now that we have created the Azure Function + Service Bus Topic Trigger along with the Service Bus subscription, let's hook it up to the existing Service Bus Topic we created in the Azure Subscription.
+
+```bash
+# Update Code to Point to SB Topic & Subscription
+code /workspaces/aca-and-functions/newrequirement/src/main/java/com/fabrikam/Function.java
+# Update Function Binding
+        @ServiceBusTopicTrigger(
+            name = "message",
+            topicName = "orders",
+            subscriptionName = "newrequirement",
+            connection = "SBConnectionString"
+        )
+
+# Update Service Bus Connection String
+code /workspaces/aca-and-functions/newrequirement/local.settings.json
+echo '"SBConnectionString":' '"'$(az servicebus namespace authorization-rule keys list -g $resourceGroup --namespace-name $servicebusNamespace --name RootManageSharedAccessKey --query primaryConnectionString -o tsv)'"'
+
+# Build and Run Locally
+cd newrequirement
+mvn clean package
+mvn azure-functions:run
+curl -X POST $apiURL?message=newrequirementtest
+curl $storeURL | jq . | grep newrequirementtest
+```
+
+Now that we have tested this locally we can push it to Azure and test it there.
+
+```bash
+# Push to Azure Functions
+mvn azure-functions:deploy
+curl -X POST $apiURL?message=newrequirement
+curl $storeURL | jq . | grep newrequirement
 ```
 
 ### Cleanup

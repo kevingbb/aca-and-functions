@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Links
-#https://github.com/kevingbb/lunchbytesNov2022
+#https://github.com/kevingbb/aca-and-functions
 
 # Demo Script
 
@@ -169,3 +169,45 @@ curl -X POST http://localhost:8080/data
 # Dashboard API
 curl http://localhost:5000/orders | jq .
 curl http://localhost:5000/queue && echo ""
+
+
+
+# Local Functions Creation & Setup
+#https://learn.microsoft.com/en-us/azure/azure-functions/functions-run-local?tabs=v4%2Clinux%2Cjava%2Cportal%2Cbash
+#https://learn.microsoft.com/en-us/azure/azure-functions/create-first-function-cli-java?tabs=bash%2Cazure-cli%2Cbrowser
+#https://learn.microsoft.com/en-us/azure/azure-functions/functions-reference-java?tabs=bash%2Cconsumption#java-versions
+#https://learn.microsoft.com/en-us/azure/azure-functions/functions-bindings-service-bus-trigger?tabs=in-process%2Cextensionv5&pivots=programming-language-java
+#https://github.com/Azure-Samples/azure-functions-samples-java
+mvn archetype:generate -DarchetypeGroupId=com.microsoft.azure \
+                       -DarchetypeArtifactId=azure-functions-archetype \
+                       -DjavaVersion=17 \
+                       -DresourceGroup=$resourceGroup \
+                       -DappRegion=$location \
+                       -Dtrigger=ServiceBusTopicTrigger \
+                       -DgroupId=com.fabrikam \
+                       -DartifactId=newrequirement \
+                       -Dversion=1.0-SNAPSHOT
+# Create Azure Service Bus Subscription
+az servicebus topic subscription create -g $resourceGroup --namespace-name $servicebusNamespace --topic-name orders --name newrequirement
+# Update Code to Point to SB Topic & Subscription
+code /workspaces/aca-and-functions/newrequirement/src/main/java/com/fabrikam/Function.java
+# Update Function Binding
+        @ServiceBusTopicTrigger(
+            name = "message",
+            topicName = "orders",
+            subscriptionName = "newrequirement",
+            connection = "SBConnectionString"
+        )
+# Update Service Bus Connection String
+code /workspaces/aca-and-functions/newrequirement/local.settings.json
+echo '"SBConnectionString":' '"'$(az servicebus namespace authorization-rule keys list -g $resourceGroup --namespace-name $servicebusNamespace --name RootManageSharedAccessKey --query primaryConnectionString -o tsv)'"'
+# Build and Run Locally
+cd newrequirement
+mvn clean package
+mvn azure-functions:run
+curl -X POST $apiURL?message=newrequirementtest
+curl $storeURL | jq . | grep newrequirementtest
+# Push to Azure Functions
+mvn azure-functions:deploy
+curl -X POST $apiURL?message=newrequirement
+curl $storeURL | jq . | grep newrequirement

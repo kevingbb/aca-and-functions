@@ -20,8 +20,8 @@ RUN apt update && apt -y install hey && apt -y install tmux
 RUN wget -q https://raw.githubusercontent.com/dapr/cli/master/install/install.sh -O - | /bin/bash
 
 # Install Azure Functions Core Tools
-# RUN curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > microsoft.gpg &&
-#     mv microsoft.gpg /etc/apt/trusted.gpg.d/microsoft.gpg &&
-#     sh -c 'echo "deb [arch=amd64] https://packages.microsoft.com/repos/microsoft-ubuntu-$(lsb_release -cs)-prod $(lsb_release -cs) main" > /etc/apt/sources.list.d/dotnetdev.list' &&
-#     apt-get update &&
-#     sudo apt-get install azure-functions-core-tools-4
+RUN curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > microsoft.gpg && \
+    sudo mv microsoft.gpg /etc/apt/trusted.gpg.d/microsoft.gpg && \
+    sudo sh -c 'echo "deb [arch=amd64] https://packages.microsoft.com/debian/$(lsb_release -rs | cut -d'.' -f 1)/prod $(lsb_release -cs) main" > /etc/apt/sources.list.d/dotnetdev.list' && \
+    sudo apt update && \
+    sudo apt install azure-functions-core-tools-4
